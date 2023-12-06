@@ -3,11 +3,13 @@
 #include "lvgl/lvgl.h"
 #include "ui_comp_coin.h"
 #include "lvgl/lvgl.h"
+#include "sds.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+extern sds myAddress;
 
 // SCREEN: ui_Screen1
 void ui_Screen(void);

@@ -15,6 +15,7 @@
 #include "flow.h"
 #include "cJSON.h"
 #include "file.h"
+#include "my.h"
 
 static void load_fungible(void* arg);
 static void load_nonfungible(void* arg);
@@ -23,9 +24,10 @@ extern SemaphoreHandle_t xGuiSemaphore;
 
 static int last_available_count = 0;
 
-static sds mykey;
-static sds myAddress;
-static sds myAddressSans;
+sds mykey;
+sds myAddress;
+sds myAddressSans;
+
 
 void btn_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
@@ -94,7 +96,6 @@ cJSON *cJSON_Select(cJSON *o, const char *fmt, ...);
 static void list_event_handler(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t *obj = lv_event_get_target(e);
-
 
     if (code == LV_EVENT_CLICKED) {
         if (e->user_data == wfList){
@@ -228,7 +229,6 @@ static void load_fungible(void* arg) {
 
     }
     xSemaphoreGive(xGuiSemaphore);
-
     cJSON_Delete(result);
     flow_destroy_argument(script_arg);
     flow_destroy_client(client);

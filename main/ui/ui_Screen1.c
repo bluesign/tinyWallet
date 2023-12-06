@@ -3,6 +3,7 @@
 #define TAB_HEIGHT 40
 #define STATUS_HEIGHT 25
 
+
 void ui_Screen(void) {
 
     ui_Screen1 = lv_obj_create(NULL);
@@ -75,7 +76,7 @@ void ui_Screen(void) {
     lv_obj_set_x(ui_labelAddress, 0);
     lv_obj_set_y(ui_labelAddress, 0);
     lv_obj_set_align(ui_labelAddress, LV_ALIGN_TOP_LEFT);
-    lv_label_set_text(ui_labelAddress, "0x73e4a1094d0bcab6");
+    lv_label_set_text(ui_labelAddress, myAddress);
 
     ui_labelFindName = lv_label_create(ui_panelAccount);
     lv_obj_set_width(ui_labelFindName, LV_SIZE_CONTENT);  /// 1
@@ -86,7 +87,7 @@ void ui_Screen(void) {
     lv_obj_set_style_text_color(ui_labelFindName, lv_color_hex(0x808080), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_labelFindName, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_labelFindName, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_label_set_text(ui_labelFindName, "bluesign.find");
+    lv_label_set_text(ui_labelFindName, "");
 
     ui_buttonSendFT = lv_btn_create(ui_panelAccount);
     lv_obj_set_width(ui_buttonSendFT, 80);
