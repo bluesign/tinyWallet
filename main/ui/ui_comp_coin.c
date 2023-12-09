@@ -17,10 +17,10 @@ lv_obj_t * ui_coin_create(lv_obj_t *comp_parent) {
     lv_obj_clear_flag(cui_coin, LV_OBJ_FLAG_SCROLLABLE);    /// Flags
 
     ui_Image5 = lv_img_create(cui_coin);
-    lv_obj_set_width( ui_Image5, 40);
-    lv_obj_set_height( ui_Image5, 40);
-    lv_obj_set_x( ui_Image5, 4 );
-    lv_obj_set_y( ui_Image5, 5 );
+    lv_obj_set_width( ui_Image5, 48);
+    lv_obj_set_height( ui_Image5, 48);
+    lv_obj_set_x( ui_Image5, 0 );
+    lv_obj_set_y( ui_Image5, 0 );
     lv_obj_set_align( ui_Image5, LV_ALIGN_TOP_LEFT);
     lv_obj_clear_flag( ui_Image5, LV_OBJ_FLAG_SCROLLABLE );    /// Flags
 

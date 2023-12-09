@@ -15,16 +15,20 @@
 #include "flow.h"
 #include "cJSON.h"
 #include "file.h"
-#include "my.h"
+#include "fnv.h"
 
-static void load_fungible(void* arg);
-static void load_nonfungible(void* arg);
+#include "main.h"
+#include "sdsbase64.h"
+#include "image.h"
 
-extern SemaphoreHandle_t xGuiSemaphore;
+static void load_fungible(void *arg);
+
+static void load_nonfungible(void *path);
+
 
 static int last_available_count = 0;
 
-sds mykey;
+sds myKey;
 sds myAddress;
 sds myAddressSans;
 
@@ -71,6 +75,7 @@ void btn_event_cb(lv_event_t *e) {
     }
 }
 
+
 void text_input_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t *ta = lv_event_get_target(e);
@@ -88,24 +93,19 @@ void text_input_event_cb(lv_event_t *e) {
 }
 
 
-cJSON *cJSON_Select(cJSON *o, const char *fmt, ...);
-
-
-
-
 static void list_event_handler(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t *obj = lv_event_get_target(e);
 
     if (code == LV_EVENT_CLICKED) {
-        if (e->user_data == wfList){
+        if (e->user_data == wfList) {
             const char *selectedItem = lv_list_get_btn_text(wfList, obj);
             printf("Selected: %s\n", selectedItem);
             memset(ssidName, 0, sizeof(ssidName));
             strncpy(ssidName, selectedItem, strlen(selectedItem));
             lv_obj_clear_flag(mboxConnect, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(mboxConnect);
-        }else if (e->user_data==nftList){
+        } else if (e->user_data == nftList) {
             printf("NFT Selected\n");
             sds path = sdsnew("MomentCollection");
             xTaskCreate(load_nonfungible, "taskLoadCollection", 4096 * 4, path, 2, NULL);
@@ -164,9 +164,13 @@ static void taskUpdateUI(void *arg) {
     vTaskDelete(NULL);
 }
 
-static void load_fungible(void* arg) {
+static void load_fungible(void *arg) {
 
     printf("taskReloadFungible\n");
+    xSemaphoreTake(xGuiSemaphore, portMAX_DELAY);
+    lv_obj_t * loading = ui_msgbox("Loading", "Loading Account...", NULL, NULL);
+    xSemaphoreGive(xGuiSemaphore);
+
     flowClient *client = flow_create_client("rest-mainnet.onflow.org", 443);
 
     char *ix_ft_list = read_file_all("/data/ix/ft_list.cdc");
@@ -176,54 +180,68 @@ static void load_fungible(void* arg) {
             ix_ft_list,
             script_arg,
             NULL);
+    printf("Result: %s\n", cJSON_Print(result));
     free(ix_ft_list);
 
-    int size = cJSON_GetArraySize( cJSON_Select(result, ".value"));
 
     xSemaphoreTake(xGuiSemaphore, portMAX_DELAY);
+    lv_msgbox_close(loading);
 
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < cJSON_GetArraySize(cJSON_Select(result, ".value")); i++) {
         cJSON *vault = cJSON_Select(result, ".value[*]", i);
 
         lv_obj_t *coin = lv_list_add_text(ftList, "");
-        lv_obj_t *ui_coin_temp = ui_coin_create(coin);
         lv_obj_clear_flag(coin, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_event_cb(ui_coin_temp, list_event_handler, LV_EVENT_CLICKED, ftList);
-        lv_label_set_text(ui_comp_get_child(ui_coin_temp, UI_COMP_COIN_DESCRIPTION_PRICE), "$0.00");
-        lv_label_set_text(ui_comp_get_child(ui_coin_temp, UI_COMP_COIN_ITEMS_VALUE), "$0.00");
+        lv_obj_t *aCoin = ui_coin_create(coin);
+        lv_obj_add_event_cb(aCoin, list_event_handler, LV_EVENT_CLICKED, ftList);
+        lv_label_set_text(ui_comp_get_child(aCoin, UI_COMP_COIN_DESCRIPTION_PRICE), "$0.00");
+        lv_label_set_text(ui_comp_get_child(aCoin, UI_COMP_COIN_ITEMS_VALUE), "$0.00");
 
-        for (int j = 0; j <  cJSON_GetArraySize(cJSON_Select(vault, ".value")); j++) {
+        for (int j = 0; j < cJSON_GetArraySize(cJSON_Select(vault, ".value")); j++) {
             cJSON *key = cJSON_Select(vault, ".value[*].key.value", j);
             cJSON *value = cJSON_Select(vault, ".value[*].value.value", j);
 
-            if (strcmp(key->valuestring, "identifier") == 0) {
-                sds imageURL = sdsnew("A:data/ft/");
-                imageURL = sdscat(imageURL, value->valuestring);
-                imageURL = sdscatlen(imageURL, ".png", 4);
-                printf("Image URL: %s\n", imageURL);
-                lv_img_set_src(ui_comp_get_child(ui_coin_temp, UI_COMP_COIN_IMAGE), imageURL);
-                sdsfree(imageURL);
-            } else if (strcmp(key->valuestring, "name") == 0) {
-                lv_label_set_text(
-                        ui_comp_get_child(ui_coin_temp, UI_COMP_COIN_NAME),
-                        value->valuestring
-                );
-            } else if (strcmp(key->valuestring, "balance") == 0) {
-                lv_label_set_text_fmt(
-                        ui_comp_get_child(ui_coin_temp, UI_COMP_COIN_COUNT),
-                        "%.02f",
-                        atof(value->valuestring));
-            } else if (strcmp(key->valuestring, "price") == 0) {
-                lv_label_set_text_fmt(
-                        ui_comp_get_child(ui_coin_temp, UI_COMP_COIN_DESCRIPTION_PRICE),
-                        "$%.02f",
-                        atof(value->valuestring));
-            } else if (strcmp(key->valuestring, "total") == 0) {
-                lv_label_set_text_fmt(
-                        ui_comp_get_child(ui_coin_temp, UI_COMP_COIN_ITEMS_VALUE),
-                        "$%.02f",
-                        atof(value->valuestring));
+            if (strcmp(key->valuestring, "image") == 0) {
+                void* dscImage = image_from_base64(value->valuestring, 48, 48);
+                lv_img_set_src(ui_comp_get_child(aCoin, UI_COMP_COIN_IMAGE),
+                               (void *) dscImage
+                               );
+                continue;
             }
+
+            switch (fnv_32_str(key->valuestring, FNV1_32_INIT)) {
+
+                case S_name:
+                    lv_label_set_text(
+                            ui_comp_get_child(aCoin, UI_COMP_COIN_NAME),
+                            value->valuestring
+                    );
+                    break;
+
+                case S_balance:
+                    lv_label_set_text_fmt(
+                            ui_comp_get_child(aCoin, UI_COMP_COIN_COUNT),
+                            "%.02f",
+                            strtod(value->valuestring, NULL)
+                    );
+                    break;
+
+                case S_price:
+                    lv_label_set_text_fmt(
+                            ui_comp_get_child(aCoin, UI_COMP_COIN_DESCRIPTION_PRICE),
+                            "$%.02f",
+                            strtod(value->valuestring, NULL)
+                    );
+                    break;
+
+                case S_total:
+                    lv_label_set_text_fmt(
+                            ui_comp_get_child(aCoin, UI_COMP_COIN_ITEMS_VALUE),
+                            "$%.02f",
+                            strtod(value->valuestring, NULL));
+                    break;
+            }
+
 
         }
 
@@ -233,14 +251,12 @@ static void load_fungible(void* arg) {
     flow_destroy_argument(script_arg);
     flow_destroy_client(client);
 
-    xTaskCreate(load_nonfungible, "taskLoadNonFungible", 4096 * 4, NULL, 2, NULL);
-
-    vTaskDelete(NULL);
+    load_nonfungible(NULL);
 
 }
 
-static void load_nonfungible(void* arg) {
-    printf("taskReloadNonFungible\n");
+static void load_nonfungible(void *path) {
+
     xSemaphoreTake(xGuiSemaphore, portMAX_DELAY);
     lv_obj_clean(nftList);
     xSemaphoreGive(xGuiSemaphore);
@@ -250,12 +266,12 @@ static void load_nonfungible(void* arg) {
     flowArgument *script_arg = flow_create_argument("Address", myAddress);
     flowArgument *script_arg2 = NULL;
 
-    char *script = read_file_all("/data/ix/nft_list.cdc");
-
-    if (arg!=NULL){
-        script_arg2 = flow_create_argument("String", arg);
-        free(script);
+    char *script;
+    if (path == NULL) {
+        script = read_file_all("/data/ix/nft_list.cdc");
+    } else {
         script = read_file_all("/data/ix/nft_item_list.cdc");
+        script_arg2 = flow_create_argument("String", path);
     }
 
     cJSON *resultNFT = flow_execute_script(
@@ -267,60 +283,62 @@ static void load_nonfungible(void* arg) {
     free(script);
 
 
-    cJSON *collections = cJSON_Select(resultNFT, ".value");
-    int size = cJSON_GetArraySize(collections);
-    printf("NFTs: %d\n", size);
     xSemaphoreTake(xGuiSemaphore, portMAX_DELAY);
 
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < cJSON_GetArraySize(cJSON_Select(resultNFT, ".value")); i++) {
         cJSON *collection = cJSON_Select(resultNFT, ".value[*]", i);
 
         lv_obj_t *nft = lv_list_add_text(nftList, "");
         lv_obj_clear_flag(nft, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_t *ui_nft_temp = ui_coin_create(nft);
+        lv_obj_t *aNFT = ui_coin_create(nft);
 
-        lv_label_set_text(ui_comp_get_child(ui_nft_temp, UI_COMP_COIN_DESCRIPTION_PRICE), "");
-        lv_label_set_text(ui_comp_get_child(ui_nft_temp, UI_COMP_COIN_ITEMS_VALUE), "");
-        lv_label_set_text(ui_comp_get_child(ui_nft_temp, UI_COMP_COIN_COUNT), "");
+        lv_label_set_text(ui_comp_get_child(aNFT, UI_COMP_COIN_DESCRIPTION_PRICE), "");
+        lv_label_set_text(ui_comp_get_child(aNFT, UI_COMP_COIN_ITEMS_VALUE), "");
+        lv_label_set_text(ui_comp_get_child(aNFT, UI_COMP_COIN_COUNT), "");
 
-        cJSON *fields = cJSON_Select(collection, ".value");
-        int sizeFields = cJSON_GetArraySize(fields);
-
-        for (int j = 0; j < sizeFields; j++) {
-            cJSON *field = cJSON_GetArrayItem(fields, j);
+        for (int j = 0; j < cJSON_GetArraySize(cJSON_Select(collection, ".value")); j++) {
+            cJSON *field = cJSON_Select(collection, ".value[*]", j);
             cJSON *key = cJSON_Select(field, ".key.value");
             cJSON *value = cJSON_Select(field, ".value.value");
 
-            if (strcmp(key->valuestring, "identifier") == 0) {
-                sds imageURL = sdsnew("A:data/nft/");
-                imageURL = sdscatlen(imageURL, value->valuestring, strlen(value->valuestring));
-                imageURL = sdscatlen(imageURL, ".png", 4);
-                printf("Image URL: %s\n", imageURL);
-                lv_img_set_src(ui_comp_get_child(ui_nft_temp, UI_COMP_COIN_IMAGE), imageURL);
-                sdsfree(imageURL);
-            } else if (strcmp(key->valuestring, "name") == 0) {
-                lv_label_set_text(
-                        ui_comp_get_child(ui_nft_temp, UI_COMP_COIN_NAME),
-                        value->valuestring
+            if (strcmp(key->valuestring, "image") == 0) {
+                void* dscImage = image_from_base64(value->valuestring, 48, 48);
+                lv_img_set_src(ui_comp_get_child(aNFT, UI_COMP_COIN_IMAGE),
+                               (void *) dscImage
                 );
-            }  else if (strcmp(key->valuestring, "count") == 0) {
-                lv_label_set_text_fmt(
-                        ui_comp_get_child(ui_nft_temp, UI_COMP_COIN_DESCRIPTION_PRICE),
-                        "%d %s",
-                        atoi(value->valuestring),
-                        atoi(value->valuestring) == 1 ? "Item" : "Items"
-                );
-            } else if (strcmp(key->valuestring, "id") == 0) {
-                lv_label_set_text_fmt(
-                        ui_comp_get_child(ui_nft_temp, UI_COMP_COIN_DESCRIPTION_PRICE),
-                        "ID: %s",
-                        value->valuestring
-                );
-            } else if (strcmp(key->valuestring, "path") == 0) {
-                lv_obj_add_event_cb(ui_nft_temp, list_event_handler, LV_EVENT_CLICKED, value->valuestring);
+                continue;
             }
 
+            switch (fnv_32_str(key->valuestring, FNV1_32_INIT)) {
 
+                case S_name:
+                    lv_label_set_text(
+                            ui_comp_get_child(aNFT, UI_COMP_COIN_NAME),
+                            value->valuestring
+                    );
+                    break;
+
+                case S_count:
+                    lv_label_set_text_fmt(
+                            ui_comp_get_child(aNFT, UI_COMP_COIN_DESCRIPTION_PRICE),
+                            "%ld %s",
+                            strtol(value->valuestring, NULL, 10),
+                            strtod(value->valuestring, NULL) == 1 ? "Item" : "Items"
+                    );
+                    break;
+
+                case S_id:
+                    lv_label_set_text_fmt(
+                            ui_comp_get_child(aNFT, UI_COMP_COIN_DESCRIPTION_PRICE),
+                            "ID: %s",
+                            value->valuestring
+                    );
+                    break;
+
+                case S_path:
+                    lv_obj_add_event_cb(aNFT, list_event_handler, LV_EVENT_CLICKED, value->valuestring);
+                    break;
+            }
 
         }
 
@@ -329,14 +347,13 @@ static void load_nonfungible(void* arg) {
 
     cJSON_Delete(resultNFT);
     flow_destroy_argument(script_arg);
+    if (script_arg2) {
+        flow_destroy_argument(script_arg2);
+    }
     flow_destroy_client(client);
-
-
     vTaskDelete(NULL);
 
 }
-
-
 
 
 static void taskTransaction(void *arg) {
@@ -344,28 +361,29 @@ static void taskTransaction(void *arg) {
 
     flowClient *client = flow_create_client("rest-mainnet.onflow.org", 443);
 
-    cJSON* latest_block = flow_get_latest_block(client);
+    cJSON *latest_block = flow_get_latest_block(client);
     printf("Latest block: %s\n", cJSON_Print(latest_block));
-    cJSON* block_id = cJSON_Select(latest_block, "[0].header.id");
+    cJSON *block_id = cJSON_Select(latest_block, "[0].header.id");
     printf("Block ID: %s\n", block_id->valuestring);
 
-    cJSON* account = flow_get_account(client, myAddressSans);
+    cJSON *account = flow_get_account(client, myAddressSans);
     printf("Account: %s\n", cJSON_Print(account));
-    cJSON* account_keys = cJSON_Select(account, ".keys");
+    cJSON *account_keys = cJSON_Select(account, ".keys");
 
     int sequenceNumber = -1;
     int keyIndex = -1;
 
-    for(int i = 0; i < cJSON_GetArraySize(account_keys); i++){
-        cJSON* key = cJSON_Select(account, ".keys[*]", i);
-        cJSON* key_index = cJSON_Select(key, ".index");
-        cJSON* key_sequence_number = cJSON_Select(key, ".sequence_number");
-        cJSON* key_public_key = cJSON_Select(key, ".public_key");
-        printf("Key %d: %s %s %s\n", i, key_index->valuestring, key_sequence_number->valuestring, key_public_key->valuestring);
+    for (int i = 0; i < cJSON_GetArraySize(account_keys); i++) {
+        cJSON *key = cJSON_Select(account, ".keys[*]", i);
+        cJSON *key_index = cJSON_Select(key, ".index");
+        cJSON *key_sequence_number = cJSON_Select(key, ".sequence_number");
+        cJSON *key_public_key = cJSON_Select(key, ".public_key");
+        printf("Key %d: %s %s %s\n", i, key_index->valuestring, key_sequence_number->valuestring,
+               key_public_key->valuestring);
 
-        if (strcmp(&key_public_key->valuestring[2], mykey) == 0) {
-            sequenceNumber = atoi(key_sequence_number->valuestring);
-            keyIndex = atoi(key_index->valuestring);
+        if (strcmp(&key_public_key->valuestring[2], myKey) == 0) {
+            sequenceNumber = strtol(key_sequence_number->valuestring, NULL, 10);
+            keyIndex = strtol(key_index->valuestring, NULL, 10);
             continue;
         }
     }
@@ -373,44 +391,44 @@ static void taskTransaction(void *arg) {
     printf("Chosen Sequence number: %d\n", sequenceNumber);
     printf("Chosen Key index: %d\n", keyIndex);
 
-    flowProposer* proposer =  flow_create_proposer(
+    flowProposer *proposer = flow_create_proposer(
             myAddressSans,
             keyIndex,
             sequenceNumber);
 
 
-    flowArgument* arg1 =  flow_create_argument("UFix64","0.1");
-    flowArgument* arg2 = flow_create_argument("Address", myAddress);
-    list* arguments = listCreate();
+    flowArgument *arg1 = flow_create_argument("UFix64", "0.1");
+    flowArgument *arg2 = flow_create_argument("Address", myAddress);
+    list *arguments = listCreate();
     listAddNodeTail(arguments, arg1);
     listAddNodeTail(arguments, arg2);
 
-    sds tx_send_flow = sdsnewlen(tx_send_flow_start, tx_send_flow_end - tx_send_flow_start);
-    flowTransaction* transaction = flow_create_transaction(
+    char* tx_send_flow = read_file_all("/data/ix/tx_send_flow.cdc");
+    flowTransaction *transaction = flow_create_transaction(
             tx_send_flow,
             arguments,
-            (unsigned char*)block_id->valuestring,
+            (unsigned char *) block_id->valuestring,
             proposer
     );
+    free(tx_send_flow);
 
     //sign transaction
-    flowSignature* signature = flow_create_signature(
+    flowSignature *signature = flow_create_signature(
             myAddressSans,
             keyIndex,
             signTransactionWithSecureElement(transaction, 0)
-            );
+    );
 
     listAddNodeHead(transaction->envelope_signatures, signature);
 
     printf("transaction made\n");
 
-    cJSON* result = flow_send_transaction(client, transaction, NULL);
+    cJSON *result = flow_send_transaction(client, transaction, NULL);
     printf("Result: %s\n", cJSON_Print(result));
 
 
     vTaskDelete(NULL);
 }
-
 
 
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -455,12 +473,18 @@ esp_err_t init_fs(void) {
     return ESP_OK;
 }
 
+void load_account(){
+    cJSON* account = cJSON_Parse(read_file_all("/data/account.json"));
+    cJSON* key = cJSON_Select(account, ".publicKey");
+    cJSON* address = cJSON_Select(account, ".address");
+    myKey = sdsnew(key->valuestring);
+    myAddress = sdsnew(address->valuestring);
+    myAddressSans = sdsnew(address->valuestring+2);
+    cJSON_Delete(account);
+}
 
 void app_main(void) {
-    mykey = sdsnew(
-            "d45cea885bdc7a5e81db420c6ee12db2242c7390e1bd36b6ebe789ac6a18d2f6e9797f63ec574167caf3f9a51d5226caa9e72e6bd12bbdcff78ccb481d893769");
-    myAddress = sdsnew("0x73e4a1094d0bcab6");
-    myAddressSans = sdsnew("73e4a1094d0bcab6");
+
 
     esp_log_level_set("gpio", ESP_LOG_NONE);
     esp_log_level_set("ILI9341", ESP_LOG_NONE);
@@ -469,9 +493,12 @@ void app_main(void) {
 
     init_fs();
 
+    load_account();
+
     xSemaphoreTake(xGuiSemaphore, portMAX_DELAY);
     ui_init();
     xSemaphoreGive(xGuiSemaphore);
+
 
     xTaskCreate(taskUpdateUI, "taskUpdateUI", 1024 * 8, NULL, 2, NULL);
     wifi_init(&event_handler);

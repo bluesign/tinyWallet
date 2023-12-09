@@ -2,7 +2,6 @@
 #define _SQUARELINE_PROJECT_UI_H
 #include "lvgl/lvgl.h"
 #include "ui_comp_coin.h"
-#include "lvgl/lvgl.h"
 #include "sds.h"
 
 #ifdef __cplusplus
@@ -65,7 +64,7 @@ extern void text_input_event_cb(lv_event_t *e);
 
 
 void ui_init(void);
-void ui_msgbox(const char* title, const char* message, const char * buttons[], lv_event_cb_t callback );
+lv_obj_t* ui_msgbox(const char* title, const char* message, const char * buttons[], lv_event_cb_t callback );
 lv_obj_t* ui_spinner();
 
 

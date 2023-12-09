@@ -5,14 +5,6 @@
 #include "cJSON.h"
 #include "adlist.h"
 
-//resources
-extern const uint8_t tx_send_flow_start[] asm("_binary_tx_send_flow_cdc_start");
-extern const uint8_t tx_send_flow_end[] asm("_binary_tx_send_flow_cdc_end");
-
-extern const uint8_t flow_png_start[] asm("_binary_flow_png_start");
-extern const uint8_t flow_png_end[] asm("_binary_flow_png_end");
-
-
 typedef struct flowClient
 {
     char* host;
@@ -59,11 +51,6 @@ cJSON* flow_get_account(flowClient* client, const char* address);
 cJSON* flow_execute_script(flowClient* client, const char* script, ...);
 cJSON* flow_send_transaction(flowClient* client, flowTransaction* tx, ...);
 
-flowAddress* flow_create_address(char* address);
-void flow_destroy_address(flowAddress* address);
-
-flowIdentifier* flow_create_identifier(char* identifier);
-void flow_destroy_identifier(flowIdentifier* identifier);
 
 flowProposer * flow_create_proposer(char* address, uint64_t key_index, uint64_t sequence_number);
 void flow_destroy_proposer(flowProposer* proposer);

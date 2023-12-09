@@ -2,7 +2,6 @@
 #include "sds.h"
 
 
-
 lv_obj_t *keyboard;
 
 lv_obj_t *ui_Screen1;
@@ -44,6 +43,7 @@ lv_obj_t *batteryIcon;
 lv_obj_t *wifiIcon;
 
 uint32_t LV_EVENT_GET_COMP_CHILD;
+lv_obj_t *spinner;
 
 typedef struct {
     uint32_t child_idx;
@@ -81,18 +81,30 @@ void ui_init( void ){
     lv_disp_load_scr( ui_Screen1);
 }
 
-void ui_msgbox(const char* title, const char* message, const char * buttons[], lv_event_cb_t callback )
-{
-    lv_obj_t * mbox1 = lv_msgbox_create(lv_scr_act(), title, message, buttons, false);
-    lv_obj_add_event_cb(mbox1, callback, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_center(mbox1);
-}
+lv_obj_t* ui_spinner(lv_obj_t* parent) {
+    spinner = lv_spinner_create(parent, 60000, 0);
+    lv_obj_set_size(spinner, 50, 50);
+    lv_obj_align(spinner,  LV_ALIGN_CENTER, 0,0); /*Align to the corner*/
 
-lv_obj_t* ui_spinner() {
-    lv_obj_t *spinner = lv_spinner_create(lv_scr_act(), 1000, 60);
-    lv_obj_set_size(spinner, 100, 100);
-    lv_obj_center(spinner);
     return spinner;
 }
+
+lv_obj_t*  ui_msgbox(const char* title, const char* message, const char * buttons[], lv_event_cb_t callback )
+{
+    lv_obj_t * mbox1 = lv_msgbox_create(NULL, "", message, buttons, false);
+    if (callback!=NULL) {
+        lv_obj_add_event_cb(mbox1, callback, LV_EVENT_VALUE_CHANGED, NULL);
+    }
+    lv_obj_set_width(mbox1, 220);
+    lv_obj_set_height(mbox1, 120);
+    lv_obj_align(mbox1,  LV_ALIGN_CENTER, 0,0); /*Align to the corner*/
+    lv_obj_align(((lv_msgbox_t*)mbox1)->text,  LV_ALIGN_CENTER, 0,0); /*Align to the corner*/
+
+    ui_spinner(mbox1);
+
+    return mbox1;
+}
+
+
 
 

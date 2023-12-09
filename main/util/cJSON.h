@@ -288,6 +288,8 @@ CJSON_PUBLIC(char*) cJSON_SetValuestring(cJSON *object, const char *valuestring)
 CJSON_PUBLIC(void *) cJSON_malloc(size_t size);
 CJSON_PUBLIC(void) cJSON_free(void *object);
 
+cJSON *cJSON_Select(cJSON *o, const char *fmt, ...);
+
 
 #ifdef __cplusplus
 }

@@ -5,3 +5,4 @@
 cmake-build-debug/
 build/
 
+/components/core2forAWS/CMakeFiles/

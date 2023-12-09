@@ -1,4 +1,5 @@
 #include "hex.h"
+
 unsigned char* hex_to_byte(char* hex){
 
     printf("hex: %s\n", hex);
@@ -26,4 +27,15 @@ unsigned char* hex_to_byte(char* hex){
 
     return buffer;
 
+}
+
+sds bytes_to_hex(unsigned char* bytes, size_t length){
+    char* hex = malloc(length*2+1);
+    for (int i=0;i<length;i++){
+        sprintf(&hex[i*2], "%02x", bytes[i]);
+    }
+    hex[length*2] = '\0';
+    sds result = sdsnew(hex);
+    free(hex);
+    return result;
 }

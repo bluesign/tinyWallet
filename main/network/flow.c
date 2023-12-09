@@ -4,7 +4,7 @@
 #include "cJSON.h"
 #include "sds.h"
 #include "hex.h"
-#include "base64.h"
+#include "sdsbase64.h"
 
 #include "cryptoauthlib.h"
 #include "esp_log.h"
@@ -124,37 +124,6 @@ sds prepareEnvelopeWithDomainTag(flowTransaction* tx){
 }
 
 
-sds bytes_to_hex(unsigned char* bytes, int length){
-    char* hex = malloc(length*2+1);
-    for (int i=0;i<length;i++){
-        sprintf(&hex[i*2], "%02x", bytes[i]);
-    }
-    hex[length*2] = '\0';
-    sds result = sdsnew(hex);
-    free(hex);
-    return result;
-}
-
-flowAddress* flow_create_address(char* address){
-    flowAddress* flowAddress = malloc(sizeof(flowAddress));
-    unsigned char* address_bytes = hex_to_byte(address);
-    memcpy(flowAddress, address_bytes, 8);
-    free(address_bytes);
-    return flowAddress;
-}
-
-void flow_destroy_address(flowAddress* address){
-    free(address);
-}
-
-flowIdentifier* flow_create_identifier(char* identifier){
-    flowIdentifier* flow_identifier = malloc(sizeof(flowIdentifier));
-    unsigned char* identifier_bytes = hex_to_byte(identifier);
-    memcpy(flow_identifier, identifier_bytes, 32);
-    free(identifier_bytes);
-    return flow_identifier;
-}
-
 flowProposer* flow_create_proposer(char* address, uint64_t key_index, uint64_t sequence_number){
     flowProposer* proposer = malloc(sizeof(flowProposer));
     unsigned char* address_bytes = hex_to_byte(address);
@@ -170,13 +139,13 @@ void flow_destroy_proposer(flowProposer* proposer){
 }
 
 flowSignature* flow_create_signature(char* address, uint64_t key_index, char* signature){
-    flowSignature* flowSignature = malloc(sizeof(flowSignature));
+    flowSignature* aSignature = malloc(sizeof(flowSignature));
     unsigned char* address_bytes = hex_to_byte(address);
-    memcpy(flowSignature->address, address_bytes, 8);
+    memcpy(aSignature->address, address_bytes, 8);
     free(address_bytes);
-    flowSignature->key_index = key_index;
-    flowSignature->signature = signature;
-    return flowSignature;
+    aSignature->key_index = key_index;
+    aSignature->signature = signature;
+    return aSignature;
 }
 
 void flow_destroy_signature(flowSignature* signature){
@@ -207,7 +176,7 @@ void flow_destroy_argument(flowArgument* argument){
     free(argument);
 }
 
-flowTransaction * flow_create_transaction(
+flowTransaction* flow_create_transaction(
         sds script,
         list* arguments,
         unsigned char* reference_block_id,
@@ -295,7 +264,10 @@ cJSON* flow_get_account(flowClient* client, const char* address) {
 
 cJSON* flow_execute_script(flowClient* client, const char* script, ...){
     cJSON* doc = cJSON_CreateObject();
-    cJSON_AddStringToObject(doc,"script", base64_encode(script, strlen(script)));
+    cJSON_AddStringToObject(doc,
+                            "script",
+                            sds_base64_encode(script, strlen(script))
+                            );
 
     cJSON* args = cJSON_CreateArray();
     va_list ap;
@@ -305,7 +277,7 @@ cJSON* flow_execute_script(flowClient* client, const char* script, ...){
     flowArgument* arg;
     while ((arg = va_arg(ap, flowArgument *)) != NULL) {
         char* encoded = flow_encode_argument(arg);
-        sds encodedArg = base64_encode(
+        sds encodedArg = sds_base64_encode(
                 encoded,
                 strlen(encoded)
                 );
@@ -317,15 +289,24 @@ cJSON* flow_execute_script(flowClient* client, const char* script, ...){
     cJSON_AddItemToObject(doc, "arguments", args);
 
     char* encodedRequest = cJSON_PrintUnformatted(doc);
-    printf("encodedRequest: %s\n", encodedRequest);
 
     sds response = flow_post(client, "/v1/scripts", "block_height=sealed", encodedRequest);
-    sds responseDecoded = base64_decode(&response[1], strlen(response)-2);
-    printf("response: %s\n", responseDecoded);
-    cJSON* result = cJSON_Parse(responseDecoded);
-    sdsfree(responseDecoded);
+    cJSON* responseJson = cJSON_Parse(response);
     sdsfree(response);
-    return result;
+
+    if (!cJSON_IsString(responseJson)){
+        printf("error");
+        cJSON_free(responseJson);
+        return NULL;
+    }
+    else{
+        sds responseDecoded = sds_base64_decode(responseJson->valuestring, strlen(responseJson->valuestring));
+        cJSON* result = cJSON_Parse(responseDecoded);
+        sdsfree(responseDecoded);
+        cJSON_free(responseJson);
+        return result;
+    }
+
 }
 
 
@@ -337,8 +318,8 @@ sds signTransactionWithSecureElement(flowTransaction* tx, int keySlot){
     printf("payload: %s\n", bytes_to_hex((unsigned char*)payload, sdslen(payload)));
 
     unsigned char hash[32]={0};
-    int length = sdslen(payload);
-    int rounds = length / 64;
+    size_t length = sdslen(payload);
+    size_t rounds = length / 64;
     printf("rounds: %d\n", rounds);
     printf("length: %d\n", length);
 
@@ -359,6 +340,7 @@ sds signTransactionWithSecureElement(flowTransaction* tx, int keySlot){
     r = atcab_get_pubkey(keySlot, pub);
     printf("pub r: %s\n", bytes_to_hex(pub,64));
 
+
     r = atcab_sign_ext(atcab_get_device(), keySlot, hash, signature);
     printf("sign r: %d\n", r);
     printf("signature: %s\n", bytes_to_hex(signature, 64));
@@ -367,7 +349,7 @@ sds signTransactionWithSecureElement(flowTransaction* tx, int keySlot){
 
 cJSON* flow_send_transaction(flowClient* client, flowTransaction* tx, ...){
     cJSON* doc = cJSON_CreateObject();
-    cJSON_AddStringToObject(doc,"script", base64_encode(tx->script, strlen(tx->script)));
+    cJSON_AddStringToObject(doc,"script", sds_base64_encode(tx->script, strlen(tx->script)));
     printf("script added\n");
 
     cJSON* args = cJSON_CreateArray();
@@ -377,7 +359,7 @@ cJSON* flow_send_transaction(flowClient* client, flowTransaction* tx, ...){
     while ((node = listNext(iter)) != NULL) {
         flowArgument *argument =  (flowArgument *)listNodeValue(node);
         char* encoded = flow_encode_argument(argument);
-        sds encodedArg = base64_encode(
+        sds encodedArg = sds_base64_encode(
                 encoded,
                 strlen(encoded)
         );
@@ -416,7 +398,7 @@ cJSON* flow_send_transaction(flowClient* client, flowTransaction* tx, ...){
     iter = listGetIterator(tx->authorizers, AL_START_HEAD);
     while ((node = listNext(iter)) != NULL) {
         flowAddress *address =  (flowAddress *)listNodeValue(node);
-        cJSON_AddItemToArray(authorizers, cJSON_CreateString(bytes_to_hex(address,8)));
+        cJSON_AddItemToArray(authorizers, cJSON_CreateString(bytes_to_hex((unsigned char*)address,8)));
     }
     listReleaseIterator(iter);
     cJSON_AddItemToObject(doc, "authorizers", authorizers);
@@ -431,7 +413,7 @@ cJSON* flow_send_transaction(flowClient* client, flowTransaction* tx, ...){
         cJSON_AddStringToObject(signature_json,"address", bytes_to_hex(signature->address,8));
         sprintf(str, "%llu", signature->key_index);
         cJSON_AddStringToObject(signature_json,"key_index", str);
-        cJSON_AddStringToObject(signature_json,"signature", base64_encode((char*)signature->signature,64));
+        cJSON_AddStringToObject(signature_json,"signature", sds_base64_encode((char*)signature->signature,64));
         cJSON_AddItemToArray(payload_signatures, signature_json);
     }
     listReleaseIterator(iter);
@@ -447,7 +429,7 @@ cJSON* flow_send_transaction(flowClient* client, flowTransaction* tx, ...){
         cJSON_AddStringToObject(signature_json, "address", bytes_to_hex(signature->address,8));
         sprintf(str, "%llu", signature->key_index);
         cJSON_AddStringToObject(signature_json, "key_index", str);
-        cJSON_AddStringToObject(signature_json, "signature", base64_encode((char*)signature->signature,64));
+        cJSON_AddStringToObject(signature_json, "signature", sds_base64_encode((char*)signature->signature,64));
         cJSON_AddItemToArray(envelope_signatures, signature_json);
     }
     cJSON_AddItemToObject(doc, "envelope_signatures", envelope_signatures);

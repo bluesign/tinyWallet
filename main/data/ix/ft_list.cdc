@@ -4,7 +4,7 @@ import SwapInterfaces from 0xb78ef7afa52ff906
 import NonFungibleToken from 0x1d7e57aa55817448
 import FungibleToken from 0xf233dcee88fe0abe
 import FungibleTokenMetadataViews from 0xf233dcee88fe0abe
-
+import Icons from 0x5f195aa4322e5dbb
 import MetadataViews from 0x1d7e57aa55817448
 
 pub fun main(addr: Address):  AnyStruct {
@@ -21,6 +21,16 @@ pub fun main(addr: Address):  AnyStruct {
           }
 		      var identifier = type.identifier.slice(from: 0, upTo:  type.identifier.length-6)
 
+            var idf = type.identifier
+            if idf.slice(from: idf.length-6, upTo:idf.length)==".Vault"{
+                     idf = idf.slice(from: 0, upTo: idf.length-6)
+            }
+
+             var image = ""
+               if let img = Icons.icons[idf]{
+                 image = img
+               }
+
           var name = type.identifier.slice(from: 19, upTo: type.identifier.length);
           if name.length>6{
             if name.slice(from: name.length-6, upTo:name.length)==".Vault"{
@@ -33,7 +43,7 @@ pub fun main(addr: Address):  AnyStruct {
 			if let si = swapInfo{
        var  p2 =  si![2] as! UFix64
        if p2>0.0{
-				price =   si![3] as! UFix64 / si![2] as! UFix64
+				price =  si![3] as! UFix64 / si![2] as! UFix64
         }else{
         price=0.0
         }
@@ -44,7 +54,7 @@ pub fun main(addr: Address):  AnyStruct {
 
 		  var totalValue = price * vault.balance
 
-          var displayInfo : {String:String} = {"name":name, "identifier": name, "balance":vault.balance.toString(), "price": price.toString(), "total":totalValue.toString()}
+          var displayInfo : {String:String} = {"image":image, "name":name, "identifier": name, "balance":vault.balance.toString(), "price": price.toString(), "total":totalValue.toString()}
           if let data = vault.resolveView(Type<FungibleTokenMetadataViews.FTDisplay>()){
             if let display = data as? FungibleTokenMetadataViews.FTDisplay{
                 displayInfo["name"] = display.name
